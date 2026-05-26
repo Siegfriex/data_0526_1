@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { MapPin, Navigation, Bike, Compass, Bus, ShieldAlert, Train, Plus, Minus } from "lucide-react";
 import { RoutePlan } from "../types";
@@ -90,24 +90,24 @@ const InteractiveMap = React.memo(function InteractiveMap({
     return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
   };
 
-  const handleResetLayers = () => {
+  const handleResetLayers = useCallback(() => {
     if (visibleLayers.subway) onToggleLayer("subway");
     if (visibleLayers.bus) onToggleLayer("bus");
     if (visibleLayers.bike) onToggleLayer("bike");
     if (visibleLayers.crowd) onToggleLayer("crowd");
-  };
+  }, [visibleLayers, onToggleLayer]);
 
-  const handleZoomIn = () => setZoomLevel((prev) => Math.min(prev + 0.25, 2.5));
-  const handleZoomOut = () => setZoomLevel((prev) => Math.max(prev - 0.25, 0.5));
+  const handleZoomIn = useCallback(() => setZoomLevel((prev) => Math.min(prev + 0.25, 2.5)), []);
+  const handleZoomOut = useCallback(() => setZoomLevel((prev) => Math.max(prev - 0.25, 0.5)), []);
 
-  const handleLayerClick = (layer: "subway" | "bus" | "bike" | "crowd") => {
+  const handleLayerClick = useCallback((layer: "subway" | "bus" | "bike" | "crowd") => {
     onToggleLayer(layer);
     setLegendTooltip(layer);
     if (legendTimeoutRef.current) clearTimeout(legendTimeoutRef.current);
     legendTimeoutRef.current = setTimeout(() => {
       setLegendTooltip(null);
     }, 3000);
-  };
+  }, [onToggleLayer]);
 
   // SVG dimensions
   const viewWidth = 500;
@@ -166,7 +166,7 @@ const InteractiveMap = React.memo(function InteractiveMap({
   }, [selectedPlan, startNode, endNode]);
 
   // Active path coordinates based on the selected plan
-  const getPathSegments = () => {
+  const getPathSegments = useCallback(() => {
     if (!startNode || !endNode) return null;
     if (!selectedPlan) {
       // Return straight dashed gray line
@@ -184,16 +184,16 @@ const InteractiveMap = React.memo(function InteractiveMap({
     
     segmentsString += ` Q ${mid1X} ${mid1Y}, ${mid2X} ${mid2Y} T ${endNode.x} ${endNode.y}`;
     return segmentsString;
-  };
+  }, [startNode, endNode, selectedPlan]);
 
-  const handleStationClick = (stationName: string) => {
+  const handleStationClick = useCallback((stationName: string) => {
     setContextMenuStation(stationName);
-  };
+  }, []);
 
-  const selectAs = (type: "start" | "end", name: string) => {
+  const selectAs = useCallback((type: "start" | "end", name: string) => {
     onSelectStation(type, name);
     setContextMenuStation(null);
-  };
+  }, [onSelectStation]);
 
   const handlePointerDown = (e: React.PointerEvent) => {
     setIsDragging(true);
@@ -416,10 +416,10 @@ const InteractiveMap = React.memo(function InteractiveMap({
       </div>
 
       {/* Dynamic Svg Overlay Canvas */}
-      <div 
-        className={`w-full h-full absolute inset-0 origin-center pointer-events-none ${!isDragging ? "transition-transform duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)]" : "transition-none"}`}
-        style={{ transform: `scale(${zoomLevel}) translate(${panOffset.x}px, ${panOffset.y}px)` }}
-      >
+    <div 
+      className={`w-full h-full absolute inset-0 origin-center pointer-events-none ${!isDragging ? "transition-transform duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)]" : "transition-none"}`}
+      style={{ transform: `scale(${zoomLevel}) translate(${panOffset.x}px, ${panOffset.y}px)` }}
+    >
       <svg
         className="w-full h-full absolute inset-0 cursor-grab active:cursor-grabbing pointer-events-auto"
         viewBox={`0 0 ${viewWidth} ${viewHeight}`}
@@ -429,185 +429,189 @@ const InteractiveMap = React.memo(function InteractiveMap({
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
       >
-        {/* Dynamic Route Line */}
-        {startNode && endNode && (
-          <g>
-            {/* Background Thick shadow line */}
-            <motion.path
-              key={`bg-${selectedPlan?.id || "default"}-${startStation}-${endStation}`}
-              initial={{ pathLength: 0, opacity: 0 }}
-              animate={{ pathLength: 1, opacity: 0.8 }}
-              transition={{ duration: 0.6, ease: "easeInOut" }}
-              d={getPathSegments() || ""}
-              fill="none"
-              stroke="#FFFFFF"
-              strokeOpacity="0.12"
-              strokeWidth="6"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            {/* Colored Mode Indicator Route Line */}
-            <motion.path
-              key={`fg-${selectedPlan?.id || "default"}-${startStation}-${endStation}`}
-              initial={{ pathLength: 0, opacity: 0 }}
-              animate={{ pathLength: 1, opacity: 1 }}
-              transition={{ duration: 0.9, ease: "easeInOut", delay: 0.1 }}
-              d={getPathSegments() || ""}
-              fill="none"
-              stroke={
-                selectedPlan
-                  ? selectedPlan.risk === "high"
-                    ? "#FF3B30"
-                    : "#0A84FF"
-                  : "#FFFFFF"
-              }
-              strokeWidth="3.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className={selectedPlan ? "shadow-[0_0_12px_rgba(10,132,255,0.7)] drop-shadow-xl" : ""}
-            />
-            {/* Flow indicator dashes moving continuously */}
-            {selectedPlan && (
-              <motion.path
-                key={`flow-${selectedPlan.id}-${startStation}-${endStation}`}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 0.6 }}
-                transition={{ duration: 0.5, delay: 0.9 }}
-                d={getPathSegments() || ""}
-                fill="none"
-                stroke="#FFFFFF"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="stroke-dash-animated drop-shadow-md"
-              />
-            )}
-          </g>
-        )}
-
-        {/* Dynamic Crowded overlay heatmap shadows if true */}
-        {visibleLayers.crowd &&
-          stations
-            .filter((s) => s.crowdLevel === "danger" || s.crowdLevel === "crowded")
-            .map((s, idx) => (
-              <circle
-                key={`crowd-${idx}`}
-                cx={s.x}
-                cy={s.y}
-                r={s.crowdLevel === "danger" ? 42 : 28}
-                fill={s.crowdLevel === "danger" ? "#FF3B30" : "#FF9500"}
-                opacity="0.25"
-                className="animate-pulse drop-shadow-xl"
-              />
-            ))}
-
-        {/* Dynamic Bus locations representation if bus layer active */}
-        {visibleLayers.bus &&
-          stations
-            .filter((s) => s.busesAvailable && s.busesAvailable > 0)
-            .map((s, idx) => (
-              <g key={`bus-pos-${idx}`} opacity="0.95" className="drop-shadow-lg">
-                <circle cx={s.x - 18} cy={s.y - 12} r="8" fill="#0A84FF" />
-                <circle cx={s.x - 18} cy={s.y - 12} r="9" fill="none" stroke="#FFFFFF" strokeOpacity="0.4" strokeWidth="1.5" />
-                <text
-                  x={s.x - 18}
-                  y={s.y - 9}
-                  fill="#FFF"
-                  fontSize="8"
-                  fontWeight="bold"
-                  textAnchor="middle"
-                >
-                  B
-                </text>
-              </g>
-            ))}
-
-        {/* Station Markers & Nodes */}
-        {stations.map((station) => {
-          const isSelectedStart = station.name === startStation;
-          const isSelectedEnd = station.name === endStation;
-          const isHovered = hoveredStation === station.name;
-
-          return (
-            <g
-              key={station.id}
-              className="group cursor-pointer"
-              onMouseEnter={() => setHoveredStation(station.name)}
-              onMouseLeave={() => setHoveredStation(null)}
-              onClick={() => handleStationClick(station.name)}
-            >
-              {/* Highlight Circle Background */}
-              {(isSelectedStart || isSelectedEnd || isHovered) && (
-                <circle
-                  cx={station.x}
-                  cy={station.y}
-                  r={isSelectedStart || isSelectedEnd ? 16 : 11}
-                  fill={isSelectedStart ? "#A6D600" : isSelectedEnd ? "#F5B700" : "#2E3236"}
-                  opacity="0.3"
-                  className="transition-all duration-200"
+        {useMemo(() => (
+          <>
+            {/* Dynamic Route Line */}
+            {startNode && endNode && (
+              <g>
+                {/* Background Thick shadow line */}
+                <motion.path
+                  key={`bg-${selectedPlan?.id || "default"}-${startStation}-${endStation}`}
+                  initial={{ pathLength: 0, opacity: 0 }}
+                  animate={{ pathLength: 1, opacity: 0.8 }}
+                  transition={{ duration: 0.6, ease: "easeInOut" }}
+                  d={getPathSegments() || ""}
+                  fill="none"
+                  stroke="#FFFFFF"
+                  strokeOpacity="0.12"
+                  strokeWidth="6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 />
-              )}
-
-              {/* Central Station Dot */}
-              <circle
-                cx={station.x}
-                cy={station.y}
-                r={isSelectedStart || isSelectedEnd ? 6.5 : 4.5}
-                fill={
-                  isSelectedStart
-                    ? "#A6D600"
-                    : isSelectedEnd
-                    ? "#F5B700"
-                    : station.type === "district"
-                    ? "#4E545B"
-                    : "#FFFFFF"
-                }
-                stroke="#141618"
-                strokeWidth={1.5}
-              />
-
-              {/* Station label */}
-              <text
-                x={station.x}
-                y={station.y - 12}
-                fill={isSelectedStart || isSelectedEnd ? "#FFFFFF" : "#A8ADB3"}
-                fontSize="10"
-                fontWeight={isSelectedStart || isSelectedEnd ? "700" : "500"}
-                textAnchor="middle"
-                className="font-sans antialiased select-none"
-              >
-                {station.name}
-              </text>
-
-              {/* Small details inside the layer overlay flags i.e. bike, buses remaining counts */}
-              {visibleLayers.bike && station.bikesAvailable && (
-                <g transform={`translate(${station.x + 12}, ${station.y + 4})`}>
-                  <rect
-                    width="22"
-                    height="11"
-                    rx="3"
-                    fill="#1E2124"
-                    stroke="#2D3135"
-                    strokeWidth="0.5"
+                {/* Colored Mode Indicator Route Line */}
+                <motion.path
+                  key={`fg-${selectedPlan?.id || "default"}-${startStation}-${endStation}`}
+                  initial={{ pathLength: 0, opacity: 0 }}
+                  animate={{ pathLength: 1, opacity: 1 }}
+                  transition={{ duration: 0.9, ease: "easeInOut", delay: 0.1 }}
+                  d={getPathSegments() || ""}
+                  fill="none"
+                  stroke={
+                    selectedPlan
+                      ? selectedPlan.risk === "high"
+                        ? "#FF3B30"
+                        : "#0A84FF"
+                      : "#FFFFFF"
+                  }
+                  strokeWidth="3.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className={selectedPlan ? "shadow-[0_0_12px_rgba(10,132,255,0.7)] drop-shadow-xl" : ""}
+                />
+                {/* Flow indicator dashes moving continuously */}
+                {selectedPlan && (
+                  <motion.path
+                    key={`flow-${selectedPlan.id}-${startStation}-${endStation}`}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 0.6 }}
+                    transition={{ duration: 0.5, delay: 0.9 }}
+                    d={getPathSegments() || ""}
+                    fill="none"
+                    stroke="#FFFFFF"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="stroke-dash-animated drop-shadow-md"
                   />
+                )}
+              </g>
+            )}
+
+            {/* Dynamic Crowded overlay heatmap shadows if true */}
+            {visibleLayers.crowd &&
+              stations
+                .filter((s) => s.crowdLevel === "danger" || s.crowdLevel === "crowded")
+                .map((s, idx) => (
+                  <circle
+                    key={`crowd-${idx}`}
+                    cx={s.x}
+                    cy={s.y}
+                    r={s.crowdLevel === "danger" ? 42 : 28}
+                    fill={s.crowdLevel === "danger" ? "#FF3B30" : "#FF9500"}
+                    opacity="0.25"
+                    className="animate-pulse drop-shadow-xl"
+                  />
+                ))}
+
+            {/* Dynamic Bus locations representation if bus layer active */}
+            {visibleLayers.bus &&
+              stations
+                .filter((s) => s.busesAvailable && s.busesAvailable > 0)
+                .map((s, idx) => (
+                  <g key={`bus-pos-${idx}`} opacity="0.95" className="drop-shadow-lg">
+                    <circle cx={s.x - 18} cy={s.y - 12} r="8" fill="#0A84FF" />
+                    <circle cx={s.x - 18} cy={s.y - 12} r="9" fill="none" stroke="#FFFFFF" strokeOpacity="0.4" strokeWidth="1.5" />
+                    <text
+                      x={s.x - 18}
+                      y={s.y - 9}
+                      fill="#FFF"
+                      fontSize="8"
+                      fontWeight="bold"
+                      textAnchor="middle"
+                    >
+                      B
+                    </text>
+                  </g>
+                ))}
+
+            {/* Station Markers & Nodes */}
+            {stations.map((station) => {
+              const isSelectedStart = station.name === startStation;
+              const isSelectedEnd = station.name === endStation;
+              const isHovered = hoveredStation === station.name;
+
+              return (
+                <g
+                  key={station.id}
+                  className="group cursor-pointer"
+                  onMouseEnter={() => setHoveredStation(station.name)}
+                  onMouseLeave={() => setHoveredStation(null)}
+                  onClick={() => handleStationClick(station.name)}
+                >
+                  {/* Highlight Circle Background */}
+                  {(isSelectedStart || isSelectedEnd || isHovered) && (
+                    <circle
+                      cx={station.x}
+                      cy={station.y}
+                      r={isSelectedStart || isSelectedEnd ? 16 : 11}
+                      fill={isSelectedStart ? "#A6D600" : isSelectedEnd ? "#F5B700" : "#2E3236"}
+                      opacity="0.3"
+                      className="transition-all duration-200"
+                    />
+                  )}
+
+                  {/* Central Station Dot */}
+                  <circle
+                    cx={station.x}
+                    cy={station.y}
+                    r={isSelectedStart || isSelectedEnd ? 6.5 : 4.5}
+                    fill={
+                      isSelectedStart
+                        ? "#A6D600"
+                        : isSelectedEnd
+                        ? "#F5B700"
+                        : station.type === "district"
+                        ? "#4E545B"
+                        : "#FFFFFF"
+                    }
+                    stroke="#141618"
+                    strokeWidth={1.5}
+                  />
+
+                  {/* Station label */}
                   <text
-                    x="11"
-                    y="8"
-                    fontSize="7"
-                    fill="#A6D600"
-                    fontWeight="bold"
+                    x={station.x}
+                    y={station.y - 12}
+                    fill={isSelectedStart || isSelectedEnd ? "#FFFFFF" : "#A8ADB3"}
+                    fontSize="10"
+                    fontWeight={isSelectedStart || isSelectedEnd ? "700" : "500"}
                     textAnchor="middle"
-                    fontFamily="monospace"
+                    className="font-sans antialiased select-none"
                   >
-                    🚲{station.bikesAvailable}
+                    {station.name}
                   </text>
+
+                  {/* Small details inside the layer overlay flags i.e. bike, buses remaining counts */}
+                  {visibleLayers.bike && station.bikesAvailable && (
+                    <g transform={`translate(${station.x + 12}, ${station.y + 4})`}>
+                      <rect
+                        width="22"
+                        height="11"
+                        rx="3"
+                        fill="#1E2124"
+                        stroke="#2D3135"
+                        strokeWidth="0.5"
+                      />
+                      <text
+                        x="11"
+                        y="8"
+                        fontSize="7"
+                        fill="#A6D600"
+                        fontWeight="bold"
+                        textAnchor="middle"
+                        fontFamily="monospace"
+                      >
+                        🚲{station.bikesAvailable}
+                      </text>
+                    </g>
+                  )}
                 </g>
-              )}
-            </g>
-          );
-        })}
+              );
+            })}
+          </>
+        ), [startNode, endNode, selectedPlan, startStation, endStation, visibleLayers.crowd, visibleLayers.bus, visibleLayers.bike, hoveredStation, getPathSegments, handleStationClick])}
       </svg>
-      </div>
+    </div>
 
       {/* Interactive station context action popup sheet */}
       {contextMenuStation && (

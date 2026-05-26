@@ -79,9 +79,9 @@ export default function App() {
 
   // Quick preset destinations for easy demo simulation with actionable insights
   const presets = [
-    { title: "9호선 급행 출근", summary: "혼잡도 120% 돌파 예상", start: "염창역", end: "여의도역", report: "carriage" as ReportType, tag: "출근", urgency: "high" },
-    { title: "광역 버스 퇴근", summary: "현재 잔여 좌석 2석", start: "사당역", end: "강남역", report: "boarding" as ReportType, tag: "퇴근", urgency: "medium" },
-    { title: "심야 야간 복구", summary: "할증 전 택시 대안", start: "홍대입구역", end: "남양주시", report: "recovery" as ReportType, tag: "막차", urgency: "warn" },
+    { title: "9호선 급행 출근", summary: "현재 혼잡도 120% 초과", start: "염창역", end: "여의도역", report: "carriage" as ReportType, tag: "🔴 혼잡 특보", urgency: "high" },
+    { title: "퇴근길 광역 버스", summary: "잔여 2석, 곧 만차 예상", start: "사당역", end: "강남역", report: "boarding" as ReportType, tag: "🟠 만차 임박", urgency: "warn" },
+    { title: "막차 탈출 플랜", summary: "택시 할증구간 진입 전", start: "홍대입구역", end: "남양주시", report: "recovery" as ReportType, tag: "🟡 심야 대안", urgency: "medium" },
   ];
 
   // AI Chat states
@@ -610,20 +610,27 @@ export default function App() {
                     >
                       {isActive && <div className="absolute inset-0 bg-gradient-to-br from-[#0A84FF]/10 to-transparent pointer-events-none" />}
                       <div className="flex items-start justify-between w-full">
-                         <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-md ${isActive ? 'text-white bg-[#0A84FF]' : urgencyColors}`}>
+                         <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md flex items-center gap-1 ${isActive ? 'text-white bg-[#0A84FF]' : urgencyColors}`}>
                            {preset.tag}
                          </span>
                          <span className={`text-[10px] font-sans font-bold flex items-center gap-1 ${isActive ? "text-[#0A84FF]" : "text-white/50"}`}>
                             {preset.start.replace("역", "")} <span className="opacity-50">→</span> {preset.end.replace("역", "")}
                          </span>
                       </div>
-                      <div className="flex flex-col gap-0.5 mt-1 relative z-10">
-                        <span className={`font-sans font-bold text-[13px] tracking-tight ${isActive ? "text-white" : "text-white/90"}`}>
+                      <div className="flex flex-col gap-0.5 mt-2 relative z-10 w-full">
+                        <span className={`font-sans font-bold text-[14px] leading-tight tracking-tight ${isActive ? "text-white" : "text-white/90"}`}>
                            {preset.title}
                         </span>
-                        <span className={`font-sans text-[10px] line-clamp-1 ${isActive ? "text-[#0A84FF]" : "text-white/50"}`}>
+                        <span className={`font-sans text-[11px] leading-snug line-clamp-2 ${isActive ? "text-[#0A84FF] font-medium" : "text-white/60"}`}>
                            {preset.summary}
                         </span>
+                        <div className="w-full h-1 mt-2.5 bg-black/40 rounded-full overflow-hidden">
+                          <div className={`h-full transition-all duration-1000 ${
+                            preset.urgency === "high" ? "bg-[#FF3B30] w-[92%]" : 
+                            preset.urgency === "warn" ? "bg-[#FF9500] w-[78%]" : 
+                            "bg-[#A6D600] w-[40%]"
+                          }`} />
+                        </div>
                       </div>
                     </button>
                   );
