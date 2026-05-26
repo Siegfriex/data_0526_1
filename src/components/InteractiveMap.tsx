@@ -39,7 +39,7 @@ const stations: StationNode[] = [
   { name: "남양주시", x: 470, y: 70, type: "district", id: "ny", bikesAvailable: 5, busesAvailable: 1, crowdLevel: "empty" },
 ];
 
-export default function InteractiveMap({
+const InteractiveMap = React.memo(function InteractiveMap({
   startStation,
   endStation,
   onSelectStation,
@@ -647,4 +647,6 @@ export default function InteractiveMap({
       </div>
     </div>
   );
-}
+});
+
+export default InteractiveMap;

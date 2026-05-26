@@ -77,11 +77,11 @@ export default function App() {
   // Active selected Date for calendar commute tracker
   const [selectedCalendarDay, setSelectedCalendarDay] = useState<number>(26);
 
-  // Quick preset destinations for easy demo simulation (helps users trigger scenarios instantly!)
+  // Quick preset destinations for easy demo simulation with actionable insights
   const presets = [
-    { title: "9호선 급행 안심출근", start: "염창역", end: "여의도역", report: "carriage" as ReportType, tag: "출근" },
-    { title: "광역 버스 만차진단", start: "사당역", end: "강남역", report: "boarding" as ReportType, tag: "퇴근" },
-    { title: "경기 야간 오지 실패복구", start: "홍대입구역", end: "남양주시", report: "recovery" as ReportType, tag: "막차" },
+    { title: "9호선 급행 출근", summary: "혼잡도 120% 돌파 예상", start: "염창역", end: "여의도역", report: "carriage" as ReportType, tag: "출근", urgency: "high" },
+    { title: "광역 버스 퇴근", summary: "현재 잔여 좌석 2석", start: "사당역", end: "강남역", report: "boarding" as ReportType, tag: "퇴근", urgency: "medium" },
+    { title: "심야 야간 복구", summary: "할증 전 택시 대안", start: "홍대입구역", end: "남양주시", report: "recovery" as ReportType, tag: "막차", urgency: "warn" },
   ];
 
   // AI Chat states
@@ -150,9 +150,14 @@ export default function App() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages]);
 
-  const handleToggleLayer = (layer: "subway" | "bus" | "bike" | "crowd") => {
+  const handleToggleLayer = useCallback((layer: "subway" | "bus" | "bike" | "crowd") => {
     setVisibleLayers((prev) => ({ ...prev, [layer]: !prev[layer] }));
-  };
+  }, []);
+
+  const handleSelectStation = useCallback((type: "start" | "end", name: string) => {
+    if (type === "start") setStartStation(name);
+    else setEndStation(name);
+  }, []);
 
   // Preset trigger helper
   const triggerPreset = (preset: typeof presets[0]) => {
@@ -546,10 +551,7 @@ export default function App() {
           <InteractiveMap
             startStation={startStation}
             endStation={endStation}
-            onSelectStation={(type, name) => {
-              if (type === "start") setStartStation(name);
-              else setEndStation(name);
-            }}
+            onSelectStation={handleSelectStation}
             selectedPlan={selectedPlan}
             visibleLayers={visibleLayers}
             onToggleLayer={handleToggleLayer}
@@ -591,22 +593,38 @@ export default function App() {
               
               <div className="flex-1 shrink-0 min-h-[40px]"></div>
 
-              {/* Routing Preset Chips Carousel */}
-              <div className="w-full overflow-x-auto scrollbar-none pb-1 flex gap-2 pointer-events-auto">
+              {/* Routing Preset Information Cards Carousel */}
+              <div className="w-full overflow-x-auto scrollbar-none pb-2 flex gap-3 pointer-events-auto snap-x">
                 {presets.map((preset, idx) => {
                   const isActive = startStation === preset.start && endStation === preset.end && selectedReportType === preset.report;
+                  const urgencyColors = preset.urgency === "high" ? "text-[#FF3B30] bg-[#FF3B30]/10 border-[#FF3B30]/30" : preset.urgency === "warn" ? "text-[#FF9500] bg-[#FF9500]/10 border-[#FF9500]/30" : "text-[#A6D600] bg-[#A6D600]/10 border-[#A6D600]/30";
                   return (
                     <button
                       key={idx}
                       onClick={() => triggerPreset(preset)}
-                      className={`shrink-0 px-2.5 py-1.5 rounded-xl text-[10px] font-mono font-bold border transition-all flex items-center gap-1.5 ${
+                      className={`shrink-0 w-[180px] snap-center text-left p-3 rounded-[16px] border transition-all flex flex-col justify-between gap-1.5 relative overflow-hidden group ${
                         isActive
-                          ? "bg-[#0A84FF]/10 text-[#0A84FF] border-[#0A84FF]/40 shadow-[0_2px_8px_rgba(166,214,0,0.15)]"
-                          : "apple-glass text-white/70 border-white/10 hover:bg-white/10"
+                          ? "bg-[#0A84FF]/10 border-[#0A84FF]/50 shadow-[0_4px_16px_rgba(10,132,255,0.2)]"
+                          : "apple-glass border-white/10 hover:border-white/20 hover:bg-white/5 active:scale-[0.98]"
                       }`}
                     >
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#0A84FF]-dark text-white font-bold" />
-                      <span>{preset.tag} : {preset.title}</span>
+                      {isActive && <div className="absolute inset-0 bg-gradient-to-br from-[#0A84FF]/10 to-transparent pointer-events-none" />}
+                      <div className="flex items-start justify-between w-full">
+                         <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-md ${isActive ? 'text-white bg-[#0A84FF]' : urgencyColors}`}>
+                           {preset.tag}
+                         </span>
+                         <span className={`text-[10px] font-sans font-bold flex items-center gap-1 ${isActive ? "text-[#0A84FF]" : "text-white/50"}`}>
+                            {preset.start.replace("역", "")} <span className="opacity-50">→</span> {preset.end.replace("역", "")}
+                         </span>
+                      </div>
+                      <div className="flex flex-col gap-0.5 mt-1 relative z-10">
+                        <span className={`font-sans font-bold text-[13px] tracking-tight ${isActive ? "text-white" : "text-white/90"}`}>
+                           {preset.title}
+                        </span>
+                        <span className={`font-sans text-[10px] line-clamp-1 ${isActive ? "text-[#0A84FF]" : "text-white/50"}`}>
+                           {preset.summary}
+                        </span>
+                      </div>
                     </button>
                   );
                 })}
