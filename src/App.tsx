@@ -992,7 +992,7 @@ export default function App() {
 
           {/* TAB 3: 통근 기록 보관함 & 아카이브 (Report Archive TAB REP-01) */}
           {activeTab === "archive" && (
-            <div className="flex-1 flex flex-col p-3 space-y-3 absolute inset-0 pt-[60px] pb-[80px] z-10 overflow-y-auto bg-black/80 backdrop-blur-3xl pointer-events-auto">
+            <div className="flex-1 flex flex-col p-4 space-y-3 absolute inset-0 z-10 overflow-y-auto bg-black/80 backdrop-blur-3xl pointer-events-auto">
               
               {/* Profile high contrast commute summary */}
               <div className="apple-glass border border-white/10 rounded-2xl p-3 flex justify-between items-center shrink-0">
@@ -1153,7 +1153,7 @@ export default function App() {
 
           {/* TAB 4: 환경설정 & 개인 맞춤 (Settings TAB SET-01) */}
           {activeTab === "settings" && (
-            <div className="flex-1 p-4 space-y-4 overflow-y-auto absolute inset-0 pt-[60px] pb-[80px] z-10 bg-black/80 backdrop-blur-3xl pointer-events-auto">
+            <div className="flex-1 p-4 space-y-4 overflow-y-auto absolute inset-0 z-10 bg-black/80 backdrop-blur-3xl pointer-events-auto">
               
               {/* Routine Location Editor (SET-02) */}
               <div className="space-y-2.5">
@@ -1326,23 +1326,12 @@ export default function App() {
         </main>
 
         {/* Global AI Chat Layer */}
-        {mapLayer !== "default" && (
+        {mapLayer !== "default" && mapLayer !== "report_detail" && (
           <div className={`absolute z-40 transition-all duration-300 pointer-events-none ${
-            mapLayer === "default" 
-              ? "bottom-[76px] right-4" 
-              : mapLayer === "result"
+            mapLayer === "ai_result"
               ? "bottom-[76px] inset-x-3"
-              : "inset-0 flex flex-col justify-end"
+              : "inset-x-0 top-0 bottom-[64px] flex flex-col justify-end"
           }`}>
-             {mapLayer === "default" && (
-                <button 
-                  onClick={() => setMapLayer("ai_overlay")}
-                  className="apple-glass-light border border-white/20 shadow-2xl shadow-[#0A84FF]/20 rounded-full p-3 pl-4 flex items-center gap-2.5 active:scale-95 transition-transform ml-auto pointer-events-auto"
-                >
-                  <Sparkles className="w-5 h-5 text-[#0A84FF]" />
-                  <span className="text-[13px] font-semibold text-white pr-2 whitespace-nowrap">안심 길 묻기</span>
-                </button>
-             )}
              
              {mapLayer === "ai_result" && (
                 <div className="apple-glass border border-white/20 rounded-2xl p-4 shadow-[0_16px_40px_rgba(0,0,0,0.7)] flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-8 pointer-events-auto">
@@ -1417,31 +1406,37 @@ export default function App() {
                     onClick={() => setMapLayer("default")}
                   />
                   <div 
-                    className={`relative w-full apple-glass border-t border-white/10 rounded-t-[32px] shadow-[0_-8px_32px_rgba(0,0,0,0.6)] flex flex-col transition-all duration-300 pointer-events-auto cursor-pointer ${
-                      mapLayer === "ai_peek" ? "h-[85px] translate-y-3 opacity-90" : "h-[75vh]"
+                    className={`relative apple-glass shadow-[0_-8px_32px_rgba(0,0,0,0.6)] flex flex-col transition-all duration-300 pointer-events-auto cursor-pointer border border-white/10 ${
+                      mapLayer === "ai_peek" ? "h-[70px] rounded-[24px] mx-3 mb-3 opacity-90 hover:opacity-100" : "w-full rounded-t-[32px] h-[75vh]"
                   }`}
                     onClick={() => {
                         if (mapLayer === "ai_peek") setMapLayer("ai_overlay");
                     }}
                   >
                      {/* Drag Handle */}
-                     <div 
-                        className="w-full flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing"
-                        onClick={(e) => {
-                           e.stopPropagation();
-                           setMapLayer(mapLayer === "ai_overlay" ? "ai_peek" : "ai_overlay");
-                        }}
-                     >
-                        <div className="w-12 h-1.5 bg-white/25 rounded-full" />
+                     <div className="w-full flex items-center justify-between px-4 pt-3 pb-2">
+                         <div className="w-6" /> {/* Spacer for centering */}
+                         <div 
+                            className="flex-1 flex justify-center cursor-grab active:cursor-grabbing py-2"
+                            onClick={(e) => {
+                               e.stopPropagation();
+                               setMapLayer(mapLayer === "ai_overlay" ? "ai_peek" : "ai_overlay");
+                            }}
+                         >
+                            <div className="w-12 h-1.5 bg-white/25 rounded-full" />
+                         </div>
+                         <button 
+                            className="w-6 h-6 flex items-center justify-center text-white/50 hover:text-white transition-colors"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setMapLayer("default");
+                            }}
+                         >
+                             <Plus className="w-6 h-6 rotate-45" />
+                         </button>
                      </div>
                      <div 
                        className={`flex-1 flex flex-col overflow-hidden px-4 pb-4 ${mapLayer === "ai_peek" ? "pointer-events-none opacity-40 blur-[1px]" : "opacity-100"}`}
-                       onClick={(e) => {
-                          if (mapLayer === "ai_peek") {
-                             e.stopPropagation();
-                             setMapLayer("ai_overlay");
-                          }
-                       }}
                      >
                          {/* Chat screen introductory guidance header */}
                          <div className="apple-glass rounded-2xl border border-white/10 p-3 text-center mb-2.5 shrink-0">
