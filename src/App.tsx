@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   Map,
   MessageSquare,
@@ -27,7 +27,8 @@ import {
   Clock,
   Car,
   Bus,
-  Footprints
+  Footprints,
+  Copy
 } from "lucide-react";
 import { TabId, ReportType, RoutePlan, SavedReport, UserPreferences, ChatMessage } from "./types";
 import { getDefaultPreferences, getSavedReportsMock, getRoutePlans, getCarSurvivalDetails, CarDetail } from "./data";
@@ -44,8 +45,8 @@ export default function App() {
 
   // Global Navigation State
   const [activeTab, setActiveTab] = useState<TabId>("map");
-  type AILayerState = "collapsed" | "floating" | "overlay" | "peek" | "result";
-  const [aiLayerState, setAiLayerState] = useState<AILayerState>("floating");
+  type MapLayerState = "default" | "ai_overlay" | "ai_peek" | "ai_result" | "report_mini" | "report_summary" | "report_detail" | "evidence";
+  const [mapLayer, setMapLayer] = useState<MapLayerState>("default");
 
   // Routing State Presets (Matching PRD scenarios)
   const [startStation, setStartStation] = useState<string>("염창역");
@@ -107,14 +108,22 @@ export default function App() {
     }, 2500);
   };
 
-  // Sync route plans when stations or preferences change
-  useEffect(() => {
+  // Memoized route calculation callback to prevent redundant map updates
+  const updateRoutePlans = useCallback(() => {
+    console.log("[RouteSync] recalculating routes due to dependency change:", { startStation, endStation, useBike: preferences.useBike, maxTaxiFee: preferences.maxTaxiFee });
     const calculatedPlans = getRoutePlans(startStation, endStation, {
       useBike: preferences.useBike,
       maxTaxiFee: preferences.maxTaxiFee,
     });
     setPlans(calculatedPlans);
-    setSelectedPlan(calculatedPlans[0] || null);
+    
+    // Only auto-select the first plan if we don't already have a valid selection for these routes
+    setSelectedPlan((prev) => {
+      if (prev && calculatedPlans.some(p => p.id === prev.id)) {
+        return calculatedPlans.find(p => p.id === prev.id)!;
+      }
+      return calculatedPlans[0] || null;
+    });
     
     // Automatically select best report type fitting the scenario
     if (startStation === "사당역") {
@@ -125,6 +134,11 @@ export default function App() {
       setSelectedReportType("deadline");
     }
   }, [startStation, endStation, preferences.useBike, preferences.maxTaxiFee]);
+
+  // Sync route plans when stations or preferences change
+  useEffect(() => {
+    updateRoutePlans();
+  }, [updateRoutePlans]);
 
   // Sync Subway Carriage comfort ratings
   useEffect(() => {
@@ -145,7 +159,9 @@ export default function App() {
     setStartStation(preset.start);
     setEndStation(preset.end);
     setSelectedReportType(preset.report);
+    if (preset.time) setDeadlineTime(preset.time);
     showToast(`📍 '${preset.title}' 비상 시나리오가 로드되었습니다.`);
+    setMapLayer("report_detail");
   };
 
   // Submit dynamic AI chat
@@ -195,20 +211,37 @@ export default function App() {
         setChatMessages((prev) => [...prev, aiMsg]);
 
         // Auto react to AI recommendations inside our responsive UI
-        if (data.startStation) setStartStation(data.startStation);
-        if (data.endStation) setEndStation(data.endStation);
+        let newStart = startStation;
+        let newEnd = endStation;
+
+        if (data.startStation) {
+          newStart = data.startStation;
+          setStartStation(data.startStation);
+        }
+        if (data.endStation) {
+          newEnd = data.endStation;
+          setEndStation(data.endStation);
+        }
         if (data.suggestedReportType) {
           setSelectedReportType(data.suggestedReportType);
         }
         if (data.recommendedCarNo) {
           setActiveCarNo(data.recommendedCarNo);
         }
-        if (data.routeIndex !== undefined && plans[data.routeIndex]) {
-          setSelectedPlan(plans[data.routeIndex]);
+        
+        // Eagerly evaluate plans so we set the exact one the AI wanted
+        const nextPlans = getRoutePlans(newStart, newEnd, {
+          useBike: preferences.useBike,
+          maxTaxiFee: preferences.maxTaxiFee
+        });
+        
+        if (data.routeIndex !== undefined && nextPlans[data.routeIndex]) {
+          setSelectedPlan(nextPlans[data.routeIndex]);
         }
+        
         showToast("💡 AI가 지도를 분석하여 전술 경로를 업데이트했습니다.");
         setChatbotLoading(false);
-        setAiLayerState("result");
+        setMapLayer("ai_result");
       } else {
         throw new Error("서버 연동 지연");
       }
@@ -244,7 +277,7 @@ export default function App() {
         setChatMessages((prev) => [...prev, fallbackMsg]);
         if (suggestedReportType) setSelectedReportType(suggestedReportType);
         setChatbotLoading(false);
-        setAiLayerState("result"); // Auto-minimize to peek map result
+        setMapLayer("ai_result"); // Auto-minimize to peek map result
       }, 700);
     }
   };
@@ -330,7 +363,7 @@ export default function App() {
       
       {/* Absolute Dynamic Floating Action Alerts / Toast Notification */}
       {toastMessage && (
-        <div id="toast-overlay" className="fixed top-5 left-1/2 -translate-x-1/2 apple-glass text-white px-4 py-2.5 rounded-full text-xs font-medium shadow-[0_12px_24px_rgba(0,0,0,0.5)] z-50 flex items-center gap-1.5 animate-in fade-in slide-in-from-top-6 duration-200">
+        <div id="toast-overlay" className="fixed top-5 left-1/2 -translate-x-1/2 apple-glass text-white px-4 py-2.5 rounded-full text-xs font-medium shadow-[0_12px_24px_rgba(0,0,0,0.5)] z-[100] flex items-center gap-1.5 animate-in fade-in slide-in-from-top-6 duration-200">
           <Sparkles className="w-3.5 h-3.5 shrink-0 text-[#0A84FF]" />
           <span>{toastMessage}</span>
         </div>
@@ -554,10 +587,12 @@ export default function App() {
           
           {/* TAB 1: 의사결정 시트 (Main Map Action Sheet) */}
           {activeTab === "map" && (
-            <div className="flex-1 flex flex-col p-3 pt-4 space-y-3 pointer-events-none justify-start mt-auto">
+            <div className="flex-1 flex flex-col p-3 pt-4 space-y-3 pointer-events-none justify-start">
               
+              <div className="flex-1 shrink-0 min-h-[40px]"></div>
+
               {/* Routing Preset Chips Carousel */}
-              <div className="w-full overflow-x-auto scrollbar-none pb-1 flex gap-2 pointer-events-auto mt-auto">
+              <div className="w-full overflow-x-auto scrollbar-none pb-1 flex gap-2 pointer-events-auto">
                 {presets.map((preset, idx) => {
                   const isActive = startStation === preset.start && endStation === preset.end && selectedReportType === preset.report;
                   return (
@@ -577,8 +612,29 @@ export default function App() {
                 })}
               </div>
 
-              {/* Input Station Settings Sheet Card (MAP-02) */}
-              <div className="apple-glass rounded-2xl border border-white/10 p-3 space-y-3 shadow-md relative pointer-events-auto">
+              {mapLayer === "default" && (
+                <div 
+                  className="apple-glass rounded-2xl border border-white/10 p-3 shadow-md relative pointer-events-auto flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
+                  onClick={() => setMapLayer("ai_overlay")}
+                >
+                  <div className="flex items-center gap-2">
+                    <Search className="w-5 h-5 text-white/50" />
+                    <span className="text-white/50 font-medium text-sm">어디까지 가나요? (AI에게 묻기)</span>
+                  </div>
+                  <Sparkles className="w-5 h-5 text-[#0A84FF]" />
+                </div>
+              )}
+
+              {mapLayer === "report_detail" && (
+              <>
+                <div className="flex justify-between items-center px-1 pointer-events-auto">
+                  <span className="font-bold text-white text-sm">리포트 상세</span>
+                  <button onClick={() => setMapLayer("default")} className="text-white/50 hover:text-white p-1">
+                    <Plus className="w-5 h-5 rotate-45" />
+                  </button>
+                </div>
+                {/* Input Station Settings Sheet Card (MAP-02) */}
+                <div className="apple-glass rounded-2xl border border-white/10 p-3 space-y-3 shadow-md relative pointer-events-auto">
                 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
@@ -746,7 +802,7 @@ export default function App() {
                                 ? "bg-[#FF9500]/10 text-[#FF9500]"
                                 : "bg-[#FF3B30]/10 text-[#FF3B30]"
                             }`}>
-                              {carDetails.find(c => c.carNo === activeCarNo)?.comfortRating} 보람
+                              {carDetails.find(c => c.carNo === activeCarNo)?.comfortRating} 보장
                             </span>
                           </div>
                           
@@ -817,7 +873,20 @@ export default function App() {
 
                       {selectedPlan && (
                         <div className="apple-glass-light border border-white/10 rounded-xl p-3 space-y-2">
-                          <span className="text-[10px] font-bold text-white/50 block uppercase">선택 이동 타임라인 (Timeline MAP-04)</span>
+                          <div className="flex justify-between items-center">
+                            <span className="text-[10px] font-bold text-white/50 uppercase">선택 이동 타임라인 (Timeline MAP-04)</span>
+                            <button
+                              onClick={() => {
+                                const summary = `[마감도착 비상 탈출 플랜]\n📍 출발: ${startStation}\n🏁 도착: ${endStation}\n⏱ 목표 시간: ${deadlineTime} 전\n\n[선택된 플랜: ${selectedPlan.name}]\n예상 도착 도착: ${selectedPlan.eta}\n추가 요금: ${selectedPlan.extraCost.toLocaleString()}원\n\n[타임라인 상세]\n${selectedPlan.timeline.map((step, idx) => `${idx + 1}. ${step.detail} (${step.duration}분)`).join('\n')}`;
+                                navigator.clipboard.writeText(summary);
+                                showToast("🔗 경로 요약이 클립보드에 복사되었습니다.");
+                              }}
+                              className="apple-glass border border-white/10 hover:bg-[#202428] text-white/70 hover:text-white px-2 py-1 rounded flex items-center gap-1.5 text-[9px] font-bold transition-all active:scale-95"
+                            >
+                              <Copy className="w-2.5 h-2.5" />
+                              <span>경로 복사</span>
+                            </button>
+                          </div>
                           <div className="space-y-3 pt-2">
                             {selectedPlan.timeline.map((step, idx) => (
                               <div key={idx} className="flex gap-2.5 items-start">
@@ -902,7 +971,8 @@ export default function App() {
                     </button>
                     <button
                       onClick={() => {
-                        setActiveTab("chat");
+                        setActiveTab("map");
+                        setMapLayer("ai_overlay");
                         handleSendMessage(`${startStation}에서 ${endStation} 가는 지각처방 리포트 요약해줘`);
                         showToast("🤖 리포트 근거 조회를 위해 AI 챗봇이 개입합니다.");
                       }}
@@ -915,11 +985,13 @@ export default function App() {
 
                 </div>
               </div>
+              </>
+              )}
             </div>
           )}
 
           {/* TAB 3: 통근 기록 보관함 & 아카이브 (Report Archive TAB REP-01) */}
-          {activeTab === "report" && (
+          {activeTab === "archive" && (
             <div className="flex-1 flex flex-col p-3 space-y-3 absolute inset-0 pt-[60px] pb-[80px] z-10 overflow-y-auto bg-black/80 backdrop-blur-3xl pointer-events-auto">
               
               {/* Profile high contrast commute summary */}
@@ -937,7 +1009,7 @@ export default function App() {
               <div className="apple-glass border border-white/10 rounded-2xl p-3.5 space-y-3 shrink-0">
                 <div className="flex justify-between items-center border-b border-white/15 pb-2">
                   <span className="text-xs font-bold font-mono text-white">2026년 5월 통근캘린더</span>
-                  <span className="text-[10px] text-[#0A84FF] font-mono">총 22일 출근</span>
+                  <span className="text-[10px] text-[#0A84FF] font-mono">총 {new Set(savedReports.map(r => r.date)).size}일 출근</span>
                 </div>
 
                 {/* Grid Header days of week */}
@@ -950,10 +1022,15 @@ export default function App() {
                   {Array.from({ length: 31 }, (_, i) => {
                     const day = i + 1;
                     const isSelect = selectedCalendarDay === day;
-                    // Success colors coding representing success commuting reports
+                    const reportsForDay = savedReports.filter(rep => {
+                      const match = rep.date.match(/-(\d{2})$/);
+                      return match && parseInt(match[1], 10) === day;
+                    });
+                    
                     let statusColor = "bg-transparent text-white/50";
-                    if (day >= 4 && day <= 29) {
-                      if (day === 12 || day === 19) {
+                    if (reportsForDay.length > 0) {
+                      const hasFail = reportsForDay.some(r => r.status === "danger" || r.status === "warning");
+                      if (hasFail) {
                         statusColor = "bg-[#FF3B30]/15 text-[#FF3B30] border border-[#FF3B30]/30"; // Warning/Late day
                       } else {
                         statusColor = "bg-[#0A84FF]/10 text-[#0A84FF] border border-[#0A84FF]/30"; // Success safe day
@@ -964,13 +1041,21 @@ export default function App() {
                       <button
                         key={day}
                         onClick={() => setSelectedCalendarDay(day)}
-                        className={`py-1 rounded-lg text-xs font-bold transition-all ${
+                        className={`py-1 rounded-lg text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 ${
                           isSelect
                             ? "ring-2 ring-white ring-offset-2 ring-offset-[#141618] z-10"
                             : ""
                         } ${statusColor}`}
                       >
-                        {day}
+                        <span>{day}</span>
+                        {reportsForDay.length > 0 && (
+                          <div className="flex gap-[2px]">
+                            {reportsForDay.slice(0, 3).map((r, idx) => (
+                              <span key={idx} className={`w-1 h-1 rounded-full ${r.status === 'success' ? 'bg-[#0A84FF]' : 'bg-[#FF3B30]'}`} />
+                            ))}
+                            {reportsForDay.length > 3 && <span className="w-1 h-1 rounded-full bg-white/50" />}
+                          </div>
+                        )}
                       </button>
                     );
                   })}
@@ -979,11 +1064,24 @@ export default function App() {
                 {/* Selected Day commute details representation */}
                 <div className="apple-glass-light border border-white/15 rounded-xl p-2.5 text-[11px] leading-relaxed">
                   <span className="text-[#0A84FF] font-bold block mb-1">📅 5월 {selectedCalendarDay}일 통근 피드백</span>
-                  {selectedCalendarDay === 12 || selectedCalendarDay === 19 ? (
-                    <span className="text-[#FF3B30] block">사당역 광역 버스 무정차 실패로 우회전술을 기용하지 못해 11분 출근지각(주의)</span>
-                  ) : (
-                    <span className="text-white/90 block">9호선 급행 3-3번 생존 대기 칸 기용으로 혼잡 피로감 없이 최적 도착성공 완료</span>
-                  )}
+                  {(() => {
+                    const selectedReports = savedReports.filter(rep => {
+                      const match = rep.date.match(/-(\d{2})$/);
+                      return match && parseInt(match[1], 10) === selectedCalendarDay;
+                    });
+                    if (selectedReports.length === 0) {
+                      return <span className="text-white/50 block">저장된 통근 리포트가 없습니다.</span>;
+                    }
+                    return (
+                      <div className="space-y-1 block">
+                        {selectedReports.map(rep => (
+                          <span key={rep.id} className={`${rep.status === 'danger' || rep.status === 'warning' ? 'text-[#FF3B30]' : 'text-white/90'} block`}>
+                            {rep.summary}
+                          </span>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -1228,17 +1326,17 @@ export default function App() {
         </main>
 
         {/* Global AI Chat Layer */}
-        {aiLayerState !== "collapsed" && (
+        {mapLayer !== "default" && (
           <div className={`absolute z-40 transition-all duration-300 pointer-events-none ${
-            aiLayerState === "floating" 
+            mapLayer === "default" 
               ? "bottom-[76px] right-4" 
-              : aiLayerState === "result"
+              : mapLayer === "result"
               ? "bottom-[76px] inset-x-3"
               : "inset-0 flex flex-col justify-end"
           }`}>
-             {aiLayerState === "floating" && (
+             {mapLayer === "default" && (
                 <button 
-                  onClick={() => setAiLayerState("overlay")}
+                  onClick={() => setMapLayer("ai_overlay")}
                   className="apple-glass-light border border-white/20 shadow-2xl shadow-[#0A84FF]/20 rounded-full p-3 pl-4 flex items-center gap-2.5 active:scale-95 transition-transform ml-auto pointer-events-auto"
                 >
                   <Sparkles className="w-5 h-5 text-[#0A84FF]" />
@@ -1246,14 +1344,14 @@ export default function App() {
                 </button>
              )}
              
-             {aiLayerState === "result" && (
+             {mapLayer === "ai_result" && (
                 <div className="apple-glass border border-white/20 rounded-2xl p-4 shadow-[0_16px_40px_rgba(0,0,0,0.7)] flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-8 pointer-events-auto">
                   <div className="flex justify-between items-start">
                     <div className="flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-[#0A84FF]" />
                       <span className="text-xs font-bold text-white">AI 전략 브리핑 종료</span>
                     </div>
-                    <button onClick={() => setAiLayerState("floating")} className="text-white/50 hover:text-white transition-colors">
+                    <button onClick={() => setMapLayer("default")} className="text-white/50 hover:text-white transition-colors">
                       <Plus className="w-5 h-5 rotate-45" />
                     </button>
                   </div>
@@ -1290,7 +1388,7 @@ export default function App() {
                   <div className="flex gap-2">
                     <button 
                       onClick={() => {
-                        setAiLayerState("collapsed");
+                        setMapLayer("report_detail");
                       }}
                       className="flex-1 apple-glass hover:bg-white/10 border border-[#0A84FF]/50 text-[#0A84FF] py-2 rounded-xl text-xs font-bold transition-colors shadow-[0_0_12px_rgba(10,132,255,0.2)]"
                     >
@@ -1299,8 +1397,8 @@ export default function App() {
                     <button 
                       onClick={() => {
                          handleSaveReport();
-                         setActiveTab("report");
-                         setAiLayerState("collapsed");
+                         setActiveTab("archive");
+                         setMapLayer("default");
                       }}
                       className="flex-1 bg-[#0A84FF] text-white py-2 rounded-xl text-xs font-bold transition-all active:scale-95"
                     >
@@ -1310,33 +1408,38 @@ export default function App() {
                 </div>
              )}
 
-             {(aiLayerState === "overlay" || aiLayerState === "peek") && (
+             {(mapLayer === "ai_overlay" || mapLayer === "ai_peek") && (
                 <>
                   <div 
                     className={`absolute inset-0 bg-black/50 transition-opacity duration-300 backdrop-blur-[2px] pointer-events-auto ${
-                      aiLayerState === "peek" ? "opacity-0 pointer-events-none" : "opacity-100"
+                      mapLayer === "ai_peek" ? "opacity-0 pointer-events-none" : "opacity-100"
                     }`}
-                    onClick={() => setAiLayerState("floating")}
+                    onClick={() => setMapLayer("default")}
                   />
-                  <div className={`relative w-full apple-glass border-t border-white/10 rounded-t-[32px] shadow-[0_-8px_32px_rgba(0,0,0,0.6)] flex flex-col transition-all duration-300 pointer-events-auto ${
-                      aiLayerState === "peek" ? "h-[85px] translate-y-3 opacity-90" : "h-[75vh]"
-                  }`}>
+                  <div 
+                    className={`relative w-full apple-glass border-t border-white/10 rounded-t-[32px] shadow-[0_-8px_32px_rgba(0,0,0,0.6)] flex flex-col transition-all duration-300 pointer-events-auto cursor-pointer ${
+                      mapLayer === "ai_peek" ? "h-[85px] translate-y-3 opacity-90" : "h-[75vh]"
+                  }`}
+                    onClick={() => {
+                        if (mapLayer === "ai_peek") setMapLayer("ai_overlay");
+                    }}
+                  >
                      {/* Drag Handle */}
                      <div 
                         className="w-full flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing"
                         onClick={(e) => {
                            e.stopPropagation();
-                           setAiLayerState(aiLayerState === "overlay" ? "peek" : "overlay");
+                           setMapLayer(mapLayer === "ai_overlay" ? "ai_peek" : "ai_overlay");
                         }}
                      >
                         <div className="w-12 h-1.5 bg-white/25 rounded-full" />
                      </div>
                      <div 
-                       className={`flex-1 flex flex-col overflow-hidden px-4 pb-4 ${aiLayerState === "peek" ? "pointer-events-none opacity-40 blur-[1px]" : "opacity-100"}`}
+                       className={`flex-1 flex flex-col overflow-hidden px-4 pb-4 ${mapLayer === "ai_peek" ? "pointer-events-none opacity-40 blur-[1px]" : "opacity-100"}`}
                        onClick={(e) => {
-                          if (aiLayerState === "peek") {
+                          if (mapLayer === "ai_peek") {
                              e.stopPropagation();
-                             setAiLayerState("overlay");
+                             setMapLayer("ai_overlay");
                           }
                        }}
                      >
@@ -1374,7 +1477,7 @@ export default function App() {
                                    {msg.sender === "ai" && msg.suggestedReportType && (
                                      <button
                                        onClick={() => {
-                                         setSelectedReportType(msg.suggestedReportType as ReportType);
+                                         setSelectedReportType(msg.suggestedReportType as ReportType); setMapLayer("report_detail");
                                          setActiveTab("map");
                                        }}
                                        className="text-[#0A84FF] flex items-center gap-0.5 text-[9px] font-bold font-sans bg-[#0A84FF]/10 px-1.5 py-0.5 rounded active:scale-95 transition-transform"
@@ -1455,11 +1558,10 @@ export default function App() {
 
 
         {/* Global Bottom Navigation Tab Bar */}
-        <nav className="absolute inset-x-0 bottom-0 h-[64px] bg-black/40 backdrop-blur-2xl border-t border-white/10 grid grid-cols-4 select-none shrink-0 z-30 p-1 pointer-events-auto rounded-b-[44px]">
+        <nav className="absolute inset-x-0 bottom-0 h-[64px] bg-black/40 backdrop-blur-2xl border-t border-white/10 grid grid-cols-3 select-none shrink-0 z-30 p-1 pointer-events-auto rounded-b-[44px]">
           {([
             { id: "map", label: "지도", icon: Map },
-            { id: "chat", label: "AI 챗", icon: MessageSquare },
-            { id: "report", label: "리포트", icon: FileText },
+            { id: "archive", label: "기록", icon: FileText },
             { id: "settings", label: "설정", icon: Sliders }
           ] as const).map((tab) => {
             const Icon = tab.icon;
@@ -1469,11 +1571,9 @@ export default function App() {
                 id={`tab-${tab.id}`}
                 key={tab.id}
                 onClick={() => {
-                  if (tab.id === "chat") {
-                    setActiveTab("map");
-                    setAiLayerState("overlay");
-                  } else {
-                    setActiveTab(tab.id);
+                  setActiveTab(tab.id as TabId);
+                  if (tab.id === "map") {
+                    setMapLayer("default");
                   }
                 }}
                 className={`flex flex-col items-center justify-center gap-1 transition-all ${

@@ -1,4 +1,14 @@
-export type TabId = "map" | "chat" | "report" | "settings";
+export type TabId = "map" | "archive" | "settings";
+
+export type MapLayerState = 
+  | "default"
+  | "ai_overlay"
+  | "ai_result"
+  | "report_mini"
+  | "report_summary"
+  | "report_detail"
+  | "evidence"
+  | "map_peek";
 
 export type ReportType = "boarding" | "carriage" | "deadline" | "recovery";
 
